@@ -1,9 +1,6 @@
 *.o
 lab1_app
 tests
-benchmark
 tests_sanitized
 *.dSYM/
-__pycache__/
-lab1.zip
 .DS_Store
