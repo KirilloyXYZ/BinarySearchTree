@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-12",
+  "timezone": "Europe/Moscow",
+  "processor": "Apple M5",
+  "ram_bytes": 17179869184,
+  "compiler": "Apple clang 21.0.0",
+  "flags": "-std=c++17 -Wall -Wextra -O2",
+  "seed": 2026,
+  "large_repeats": 1,
+  "detailed_repeats": 3,
+  "largest_basic_n": 100000000,
+  "largest_detailed_n": 1000000,
+  "random_run_max_resident_bytes": 3520921600,
+  "random_run_peak_memory_footprint_bytes": 3615689632,
+  "csv_files": [
+    "timings.csv",
+    "large_sorted.csv",
+    "large_random.csv"
+  ]
+}
