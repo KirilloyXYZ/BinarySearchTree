@@ -2,6 +2,7 @@
 #define VALUEFUNCTIONS_HPP
 
 #include <cmath>
+#include <cstddef>
 #include <iomanip>
 #include <limits>
 #include <sstream>
@@ -11,17 +12,6 @@
 template<typename T>
 bool CompareValues(const T& left, const T& right)
 {
-    return left < right;
-}
-
-template<>
-inline bool CompareValues<double>(const double& left, const double& right)
-{
-    if (std::isnan(left) || std::isnan(right))
-    {
-        throw std::invalid_argument("CompareValues: NaN cannot be ordered");
-    }
-
     return left < right;
 }
 
@@ -57,32 +47,34 @@ T ValueFromString(const std::string& text)
     return value;
 }
 
-template<>
-inline std::string ValueToString<std::string>(const std::string& value)
+inline std::size_t SizeFromString(const std::string& text)
+{
+    std::istringstream input(text);
+    input >> std::ws;
+    if (input.peek() == '-')
+    {
+        throw std::invalid_argument("SizeFromString: size cannot be negative");
+    }
+
+    return ValueFromString<std::size_t>(text);
+}
+
+inline std::string StringToString(const std::string& value)
 {
     return value;
 }
 
-template<>
-inline std::string ValueFromString<std::string>(const std::string& text)
+inline std::string StringFromString(const std::string& text)
 {
     return text;
 }
 
-template<>
-inline double ValueFromString<double>(const std::string& text)
+inline double DoubleFromString(const std::string& text)
 {
-    std::istringstream input(text);
-    double value;
-    if (!(input >> value) || !std::isfinite(value))
+    double value = ValueFromString<double>(text);
+    if (!std::isfinite(value))
     {
         throw std::invalid_argument("ValueFromString: expected a finite real number");
-    }
-
-    input >> std::ws;
-    if (!input.eof())
-    {
-        throw std::invalid_argument("ValueFromString: unexpected trailing characters");
     }
 
     return value;

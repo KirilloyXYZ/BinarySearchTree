@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <iostream>
 #include <limits>
 #include <numeric>
@@ -43,13 +44,18 @@ static int ReadInt(const std::string& prompt)
     return ReadValue<int>(prompt, ValueFromString<int>);
 }
 
+static std::size_t ReadSize(const std::string& prompt)
+{
+    return ReadValue<std::size_t>(prompt, SizeFromString);
+}
+
 template<typename T>
 struct DemoFunctions
 {
-    typename Tree<T>::CompareFunction compare;
-    typename Tree<T>::WriteFunction write;
-    typename Tree<T>::ReadFunction read;
-    typename Tree<T>::ReadFunction readKey;
+    bool (*compare)(const T&, const T&);
+    std::string (*write)(const T&);
+    T (*read)(const std::string&);
+    T (*readKey)(const std::string&);
     T (*map)(const T&);
     bool (*where)(const T&);
     T (*reduce)(const T&, const T&);
@@ -61,23 +67,22 @@ struct DemoFunctions
 template<typename T, typename Container>
 void PrintItems(const std::string& name, const Container& container, const DemoFunctions<T>& functions)
 {
-    std::vector<T> items = container.GetItems(25);
+    std::unique_ptr<Sequence<T>> items = container.GetItems(25);
     std::cout << name << " (элементов: " << container.GetCount() << "): [";
-    for (int i = 0; i < static_cast<int>(items.size()); ++i)
+    for (std::size_t i = 0; i < items->GetLength(); ++i)
     {
         if (i > 0) { std::cout << "; "; }
-        std::cout << std::quoted(functions.write(items[i]));
+        std::cout << std::quoted(functions.write(items->Get(i)));
     }
-    if (container.GetCount() > static_cast<int>(items.size())) { std::cout << "; ..."; }
+    if (container.GetCount() > items->GetLength()) { std::cout << "; ..."; }
     std::cout << "]\n";
 }
 
 template<typename T, typename Container>
 void FillManually(Container& container, const DemoFunctions<T>& functions)
 {
-    int count = ReadInt("Количество вводимых элементов: ");
-    if (count < 0) { throw std::invalid_argument("Количество не может быть отрицательным"); }
-    for (int i = 0; i < count; ++i)
+    std::size_t count = ReadSize("Количество вводимых элементов: ");
+    for (std::size_t i = 0; i < count; ++i)
     {
         T value = ReadValue<T>("Элемент " + std::to_string(i + 1) + ": ", functions.read);
         bool inserted = container.Insert(value);
@@ -88,12 +93,12 @@ void FillManually(Container& container, const DemoFunctions<T>& functions)
 template<typename T, typename Container>
 void FillGenerated(Container& container, const DemoFunctions<T>& functions)
 {
-    int count = ReadInt("Количество уникальных элементов: ");
+    std::size_t count = ReadSize("Количество уникальных элементов: ");
     int minimum = ReadInt("Минимальный ключ (для студентов ID должен быть положительным): ");
     int maximum = ReadInt("Максимальный ключ: ");
     int seed = ReadInt("Начальное значение генератора, например 2026: ");
     long long range = static_cast<long long>(maximum) - minimum + 1;
-    if (count < 0 || minimum > maximum || count > range || seed < 0)
+    if (minimum > maximum || count > static_cast<unsigned long long>(range) || seed < 0)
     {
         throw std::invalid_argument("Неверные параметры или диапазон слишком мал для уникальных ключей");
     }
@@ -110,7 +115,7 @@ void FillGenerated(Container& container, const DemoFunctions<T>& functions)
     }
 
     // A coprime step visits different keys without storing the whole range.
-    for (int i = 0; i < count; ++i)
+    for (std::size_t i = 0; i < count; ++i)
     {
         int key = static_cast<int>(minimum + position);
         container.Insert(functions.generate(key));
@@ -336,14 +341,14 @@ void RunDemo(const DemoFunctions<T>& functions)
 
 static int IntMap(const int& value)
 {
-    if (value == INT_MIN) { throw std::overflow_error("Нельзя изменить знак INT_MIN"); }
+    if (value == std::numeric_limits<int>::min()) { throw std::overflow_error("Нельзя изменить знак минимального int"); }
     return -value;
 }
 static bool IntWhere(const int& value) { return value % 2 == 0; }
 static int IntReduce(const int& value, const int& result)
 {
     long long sum = static_cast<long long>(value) + result;
-    if (sum < INT_MIN || sum > INT_MAX) { throw std::overflow_error("Сумма не помещается в int"); }
+    if (sum < std::numeric_limits<int>::min() || sum > std::numeric_limits<int>::max()) { throw std::overflow_error("Сумма не помещается в int"); }
     return static_cast<int>(sum);
 }
 static int IntFromKey(int key) { return key; }
@@ -394,15 +399,15 @@ int main()
             }
             else if (type == 2)
             {
-                DemoFunctions<double> functions = {CompareValues<double>, ValueToString<double>, ValueFromString<double>,
-                    ValueFromString<double>, DoubleMap, DoubleWhere, DoubleReduce, 0.0, DoubleFromKey,
+                DemoFunctions<double> functions = {CompareValues<double>, ValueToString<double>, DoubleFromString,
+                    DoubleFromString, DoubleMap, DoubleWhere, DoubleReduce, 0.0, DoubleFromKey,
                     "Map: изменить знак; Where: положительные; Reduce: сумма, старт 0."};
                 RunDemo(functions);
             }
             else if (type == 3)
             {
-                DemoFunctions<std::string> functions = {CompareValues<std::string>, ValueToString<std::string>,
-                    ValueFromString<std::string>, ValueFromString<std::string>, StringMap, StringWhere, StringReduce,
+                DemoFunctions<std::string> functions = {CompareValues<std::string>, StringToString,
+                    StringFromString, StringFromString, StringMap, StringWhere, StringReduce,
                     "", StringFromKey, "Строки вводятся целой строкой. Map: добавить !; Where: непустые; Reduce: соединить."};
                 RunDemo(functions);
             }
@@ -410,10 +415,10 @@ int main()
             {
                 DemoFunctions<Student> functions = {CompareStudents, StudentToString, StudentFromString,
                     ReadStudentKey, StudentMap, StudentWhere, StudentReduce,
-                    Student(INT_MAX, "Empty", "", "Result", "2000-01-01"), StudentFromKey,
+                    Student(std::numeric_limits<int>::max(), "Empty", "", "Result", "2000-01-01"), StudentFromKey,
                     "Ввод: ID \"Имя\" \"Отчество\" \"Фамилия\" \"YYYY-MM-DD\".\n"
                     "Пример: 12 \"Иван\" \"\" \"Петров\" \"2005-01-01\". Ключ — ID.\n"
-                    "Map: добавить + к фамилии; Where: чётные ID; Reduce: минимальный ID (пустой результат — ID INT_MAX)."};
+                    "Map: добавить + к фамилии; Where: чётные ID; Reduce: минимальный ID (пустой результат — максимальный ID типа int)."};
                 RunDemo(functions);
             }
             else { std::cout << "Неизвестный тип.\n"; }

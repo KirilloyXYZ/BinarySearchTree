@@ -2,9 +2,14 @@
 
 #include "TreeTests.hpp"
 #include "SetTests.hpp"
+#include "SequenceTests.hpp"
 
 int main()
 {
+    TestSequenceBasics();
+    std::cout << "PASS: sequences, copies and moves\n";
+    TestSequenceLifetimeAndExceptions();
+    std::cout << "PASS: sequence lifetime and exception cleanup\n";
     TestTreeBasics();
     std::cout << "PASS: tree basics and polymorphism\n";
     TestTreeBalanceAndRemoval();
@@ -29,6 +34,6 @@ int main()
     std::cout << "PASS: set algorithms and types\n";
     TestSetErrors();
     std::cout << "PASS: set error handling\n";
-    std::cout << "All 12 test groups passed!\n";
+    std::cout << "All 14 test groups passed!\n";
     return 0;
 }

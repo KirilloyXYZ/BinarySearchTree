@@ -1,25 +1,25 @@
 #ifndef SET_HPP
 #define SET_HPP
 
-#include <climits>
+#include <cstddef>
 #include <memory>
-#include <vector>
+
+#include "Sequence.hpp"
 
 template<typename T>
 class Set
 {
 public:
-    using CompareFunction = bool (*)(const T&, const T&);
-
     virtual ~Set() = default;
 
     virtual bool Insert(const T& value) = 0;
     virtual bool Remove(const T& value) = 0;
     virtual bool Contains(const T& value) const = 0;
-    virtual int GetCount() const = 0;
+    virtual std::size_t GetCount() const = 0;
     virtual void Clear() = 0;
-    virtual CompareFunction GetCompare() const = 0;
-    virtual std::vector<T> GetItems(int limit = INT_MAX) const = 0;
+    virtual bool (*GetCompare() const)(const T&, const T&) = 0;
+    virtual std::unique_ptr<Sequence<T>> GetItems() const = 0;
+    virtual std::unique_ptr<Sequence<T>> GetItems(std::size_t limit) const = 0;
 
     virtual std::unique_ptr<Set<T>> Clone() const = 0;
     virtual std::unique_ptr<Set<T>> Map(T (*func)(const T&)) const = 0;

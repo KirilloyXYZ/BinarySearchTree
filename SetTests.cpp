@@ -1,4 +1,5 @@
 #include "SetTests.hpp"
+#include "SequenceTests.hpp"
 
 #include <cassert>
 
@@ -19,6 +20,9 @@ void TestSetBasics()
     bool inserted = set.Insert(5);
     bool duplicate = set.Insert(5);
     assert(inserted && !duplicate && set.GetCount() == 1);
+    CheckItems(*set.GetItems(0), {});
+    CheckItems(*set.GetItems(1), {5});
+    CheckSameItems(*set.GetItems(100), *set.GetItems());
     bool missing = set.Remove(999);
     assert(!missing && set.Contains(5));
     TreeSet<int> copy(object);
@@ -45,9 +49,9 @@ void TestSetOperations()
     std::unique_ptr<Set<int>> united = a.Union(b);
     std::unique_ptr<Set<int>> common = a.Intersection(b);
     std::unique_ptr<Set<int>> difference = a.Difference(b);
-    assert((united->GetItems() == std::vector<int>{1, 2, 3, 4}));
-    assert((common->GetItems() == std::vector<int>{3}));
-    assert((difference->GetItems() == std::vector<int>{1, 2}));
+    CheckItems(*united->GetItems(), {1, 2, 3, 4});
+    CheckItems(*common->GetItems(), {3});
+    CheckItems(*difference->GetItems(), {1, 2});
     assert(a.GetCount() == 3 && b.GetCount() == 2);
     assert(a.IsSubsetOf(*united));
     assert(!a.IsSubsetOf(b));
@@ -77,9 +81,9 @@ void TestSetAlgorithmsAndTypes()
     int values[] = {1, 2, 3};
     TreeSet<int> object(values, 3);
     Set<int>& set = object;
-    assert((set.Map(Negate)->GetItems() == std::vector<int>{-3, -2, -1}));
+    CheckItems(*set.Map(Negate)->GetItems(), {-3, -2, -1});
     assert(set.Map(Zero)->GetCount() == 1);
-    assert((set.Where(Even)->GetItems() == std::vector<int>{2}));
+    CheckItems(*set.Where(Even)->GetItems(), {2});
     assert(set.Reduce(Sum, 0) == 6);
     assert(set.Reduce(LabReduce, 4) == 144);
     TreeSet<int> empty;
@@ -99,7 +103,7 @@ void TestSetAlgorithmsAndTypes()
     students.Insert(Student(2, "Ivan", "", "Petrov", "2004-01-01"));
     students.Insert(Student(2, "Petr", "", "Ivanov", "2005-01-01"));
     assert(students.GetCount() == 1);
-    assert(students.GetItems()[0].GetFirstName() == "Ivan");
+    assert(students.GetItems()->Get(0).GetFirstName() == "Ivan");
     std::unique_ptr<Set<Student>> clone = students.Clone();
     assert(clone->Equals(students));
 }

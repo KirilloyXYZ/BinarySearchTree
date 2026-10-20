@@ -14,8 +14,8 @@ private:
     void CheckCompare(const Set<T>& other) const;
 
 public:
-    explicit TreeSet(typename Set<T>::CompareFunction compare = CompareValues<T>);
-    TreeSet(const T* items, int count, typename Set<T>::CompareFunction compare = CompareValues<T>);
+    explicit TreeSet(bool (*compare)(const T&, const T&) = CompareValues<T>);
+    TreeSet(const T* items, std::size_t count, bool (*compare)(const T&, const T&) = CompareValues<T>);
     TreeSet(const TreeSet<T>& other);
     TreeSet<T>& operator=(const TreeSet<T>& other);
     ~TreeSet() override = default;
@@ -23,10 +23,11 @@ public:
     bool Insert(const T& value) override;
     bool Remove(const T& value) override;
     bool Contains(const T& value) const override;
-    int GetCount() const override;
+    std::size_t GetCount() const override;
     void Clear() override;
-    typename Set<T>::CompareFunction GetCompare() const override;
-    std::vector<T> GetItems(int limit = INT_MAX) const override;
+    bool (*GetCompare() const)(const T&, const T&) override;
+    std::unique_ptr<Sequence<T>> GetItems() const override;
+    std::unique_ptr<Sequence<T>> GetItems(std::size_t limit) const override;
 
     std::unique_ptr<Set<T>> Clone() const override;
     std::unique_ptr<Set<T>> Map(T (*func)(const T&)) const override;
@@ -50,11 +51,11 @@ TreeSet<T>::TreeSet(std::unique_ptr<Tree<T>> tree) : tree(std::move(tree))
 }
 
 template<typename T>
-TreeSet<T>::TreeSet(typename Set<T>::CompareFunction compare)
+TreeSet<T>::TreeSet(bool (*compare)(const T&, const T&))
     : tree(std::make_unique<BinarySearchTree<T>>(compare)) { }
 
 template<typename T>
-TreeSet<T>::TreeSet(const T* items, int count, typename Set<T>::CompareFunction compare)
+TreeSet<T>::TreeSet(const T* items, std::size_t count, bool (*compare)(const T&, const T&))
     : tree(std::make_unique<BinarySearchTree<T>>(items, count, compare)) { }
 
 template<typename T>
@@ -89,7 +90,7 @@ bool TreeSet<T>::Contains(const T& value) const
 }
 
 template<typename T>
-int TreeSet<T>::GetCount() const
+std::size_t TreeSet<T>::GetCount() const
 {
     return this->tree->GetCount();
 }
@@ -101,13 +102,19 @@ void TreeSet<T>::Clear()
 }
 
 template<typename T>
-typename Set<T>::CompareFunction TreeSet<T>::GetCompare() const
+bool (*TreeSet<T>::GetCompare() const)(const T&, const T&)
 {
     return this->tree->GetCompare();
 }
 
 template<typename T>
-std::vector<T> TreeSet<T>::GetItems(int limit) const
+std::unique_ptr<Sequence<T>> TreeSet<T>::GetItems() const
+{
+    return this->tree->GetItems();
+}
+
+template<typename T>
+std::unique_ptr<Sequence<T>> TreeSet<T>::GetItems(std::size_t limit) const
 {
     return this->tree->GetItems(limit);
 }
@@ -150,10 +157,10 @@ std::unique_ptr<Set<T>> TreeSet<T>::Union(const Set<T>& other) const
 {
     this->CheckCompare(other);
     std::unique_ptr<Set<T>> result = this->Clone();
-    std::vector<T> items = other.GetItems();
-    for (const T& value : items)
+    std::unique_ptr<Sequence<T>> items = other.GetItems();
+    for (std::size_t i = 0; i < items->GetLength(); ++i)
     {
-        result->Insert(value);
+        result->Insert(items->Get(i));
     }
     return result;
 }
@@ -163,9 +170,10 @@ std::unique_ptr<Set<T>> TreeSet<T>::Intersection(const Set<T>& other) const
 {
     this->CheckCompare(other);
     std::unique_ptr<Set<T>> result = std::make_unique<TreeSet<T>>(this->GetCompare());
-    std::vector<T> items = this->GetItems();
-    for (const T& value : items)
+    std::unique_ptr<Sequence<T>> items = this->GetItems();
+    for (std::size_t i = 0; i < items->GetLength(); ++i)
     {
+        const T& value = items->Get(i);
         if (other.Contains(value))
         {
             result->Insert(value);
@@ -179,9 +187,10 @@ std::unique_ptr<Set<T>> TreeSet<T>::Difference(const Set<T>& other) const
 {
     this->CheckCompare(other);
     std::unique_ptr<Set<T>> result = std::make_unique<TreeSet<T>>(this->GetCompare());
-    std::vector<T> items = this->GetItems();
-    for (const T& value : items)
+    std::unique_ptr<Sequence<T>> items = this->GetItems();
+    for (std::size_t i = 0; i < items->GetLength(); ++i)
     {
+        const T& value = items->Get(i);
         if (!other.Contains(value))
         {
             result->Insert(value);
@@ -199,10 +208,10 @@ bool TreeSet<T>::IsSubsetOf(const Set<T>& other) const
         return false;
     }
 
-    std::vector<T> items = this->GetItems();
-    for (const T& value : items)
+    std::unique_ptr<Sequence<T>> items = this->GetItems();
+    for (std::size_t i = 0; i < items->GetLength(); ++i)
     {
-        if (!other.Contains(value))
+        if (!other.Contains(items->Get(i)))
         {
             return false;
         }

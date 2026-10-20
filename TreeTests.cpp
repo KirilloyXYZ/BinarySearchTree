@@ -1,4 +1,5 @@
 #include "TreeTests.hpp"
+#include "SequenceTests.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -21,33 +22,81 @@ static bool Descending(const int& left, const int& right) { return left > right;
 class InspectedTree : public BinarySearchTree<int>
 {
 private:
-    using Node = Tree<int>::Node;
-
-    int CheckHeights(const Node* node) const
+    int CheckHeights(const Sequence<const int*>& structure, std::size_t& index) const
     {
-        if (node == nullptr)
+        assert(index < structure.GetLength());
+        const int* value = structure.Get(index);
+        ++index;
+        if (value == nullptr)
         {
             return 0;
         }
 
-        int left = this->CheckHeights(node->left.get());
-        int right = this->CheckHeights(node->right.get());
-        int height = 1 + std::max(left, right);
+        int left = this->CheckHeights(structure, index);
+        int right = this->CheckHeights(structure, index);
         assert(std::abs(left - right) <= 1);
-        assert(node->height == height);
-        return height;
+        return 1 + std::max(left, right);
     }
 
 public:
     void Check(const std::set<int>& expected) const
     {
-        std::vector<int> values = this->GetItems();
-        std::vector<int> correct(expected.begin(), expected.end());
-        assert(values == correct);
-        assert(this->GetCount() == static_cast<int>(expected.size()));
-        int actualHeight = this->CheckHeights(this->root.get());
+        std::unique_ptr<Sequence<int>> values = this->GetItems();
+        assert(values->GetLength() == expected.size());
+        std::size_t index = 0;
+        for (int value : expected)
+        {
+            assert(values->Get(index) == value);
+            ++index;
+        }
+        assert(this->GetCount() == expected.size());
+        std::unique_ptr<Sequence<const int*>> structure = this->GetStructure();
+        index = 0;
+        int actualHeight = this->CheckHeights(*structure, index);
+        assert(index == structure->GetLength());
         assert(actualHeight == this->GetHeight());
         assert(this->IsValid());
+    }
+};
+
+// A different Tree implementation with no access to BinarySearchTree's nodes.
+class TreeProxy : public Tree<int>
+{
+private:
+    Tree<int>& tree;
+
+public:
+    explicit TreeProxy(Tree<int>& tree) : tree(tree) { }
+
+    bool Insert(const int& value) override { return this->tree.Insert(value); }
+    bool Remove(const int& value) override { return this->tree.Remove(value); }
+    bool Contains(const int& value) const override { return this->tree.Contains(value); }
+    std::size_t GetCount() const override { return this->tree.GetCount(); }
+    int GetHeight() const override { return this->tree.GetHeight(); }
+    bool (*GetCompare() const)(const int&, const int&) override { return this->tree.GetCompare(); }
+    const int& GetRoot() const override { return this->tree.GetRoot(); }
+    void Clear() override { this->tree.Clear(); }
+    bool IsValid() const override { return this->tree.IsValid(); }
+    std::unique_ptr<Sequence<int>> GetItems() const override { return this->tree.GetItems(); }
+    std::unique_ptr<Sequence<int>> GetItems(std::size_t limit) const override { return this->tree.GetItems(limit); }
+    std::unique_ptr<Sequence<const int*>> GetStructure() const override { return this->tree.GetStructure(); }
+    std::unique_ptr<Tree<int>> Clone() const override { return this->tree.Clone(); }
+    std::unique_ptr<Tree<int>> Map(int (*func)(const int&)) const override { return this->tree.Map(func); }
+    std::unique_ptr<Tree<int>> Where(bool (*predicate)(const int&)) const override { return this->tree.Where(predicate); }
+    int Reduce(int (*func)(const int&, const int&), const int& startValue) const override
+    {
+        return this->tree.Reduce(func, startValue);
+    }
+    std::unique_ptr<Tree<int>> GetSubtree(const int& value) const override { return this->tree.GetSubtree(value); }
+    bool ContainsSubtree(const Tree<int>& other) const override { return this->tree.ContainsSubtree(other); }
+    std::string ToString(std::string (*write)(const int&)) const override { return this->tree.ToString(write); }
+    void ReadFromString(const std::string& text, int (*read)(const std::string&)) override
+    {
+        this->tree.ReadFromString(text, read);
+    }
+    void Print(std::ostream& output, std::string (*write)(const int&), std::size_t maxDepth = 5) const override
+    {
+        this->tree.Print(output, write, maxDepth);
     }
 };
 
@@ -57,7 +106,9 @@ void TestTreeBasics()
     Tree<int>& tree = object;
     assert(tree.GetCount() == 0);
     assert(tree.GetHeight() == 0);
-    assert(tree.GetItems().empty());
+    assert(tree.GetItems()->GetLength() == 0);
+    std::unique_ptr<Sequence<const int*>> emptyStructure = tree.GetStructure();
+    assert(emptyStructure->GetLength() == 1 && emptyStructure->Get(0) == nullptr);
     bool found = tree.Contains(7);
     bool removed = tree.Remove(7);
     assert(!found && !removed);
@@ -72,9 +123,11 @@ void TestTreeBasics()
     bool duplicate = tree.Insert(5);
     assert(!duplicate);
     assert(tree.GetCount() == 7);
-    assert((tree.GetItems() == std::vector<int>{1, 3, 4, 5, 6, 7, 9}));
-    assert((tree.GetItems(3) == std::vector<int>{1, 3, 4}));
-    assert(tree.GetItems(0).empty());
+    CheckItems(*tree.GetItems(), {1, 3, 4, 5, 6, 7, 9});
+    CheckItems(*tree.GetItems(3), {1, 3, 4});
+    CheckSameItems(*tree.GetItems(100), *tree.GetItems());
+    CheckSameItems(*tree.GetItems(std::numeric_limits<std::size_t>::max()), *tree.GetItems());
+    assert(tree.GetItems(0)->GetLength() == 0);
     tree.Clear();
     tree.Clear();
     assert(tree.GetCount() == 0 && tree.IsValid());
@@ -83,19 +136,16 @@ void TestTreeBasics()
     try { tree.GetRoot(); }
     catch (const std::out_of_range&) { thrown = true; }
     assert(thrown);
-    thrown = false;
-    try { tree.GetItems(-1); }
-    catch (const std::invalid_argument&) { thrown = true; }
-    assert(thrown);
+    BinarySearchTree<int> empty(nullptr, 0);
+    assert(empty.GetCount() == 0);
 
-    for (int mode = 0; mode < 3; ++mode)
+    for (int mode = 0; mode < 2; ++mode)
     {
         thrown = false;
         try
         {
             if (mode == 0) { BinarySearchTree<int> bad(nullptr, 1); }
-            if (mode == 1) { BinarySearchTree<int> bad(nullptr, -1); }
-            if (mode == 2) { BinarySearchTree<int> bad(static_cast<Tree<int>::CompareFunction>(nullptr)); }
+            if (mode == 1) { BinarySearchTree<int> bad(nullptr); }
         }
         catch (const std::invalid_argument&) { thrown = true; }
         assert(thrown);
@@ -109,7 +159,7 @@ void TestTreeBalanceAndRemoval()
     {
         InspectedTree tree;
         std::set<int> expected;
-        for (int i = 0; i < 3; ++i)
+        for (std::size_t i = 0; i < 3; ++i)
         {
             tree.Insert(values[i]);
             expected.insert(values[i]);
@@ -137,7 +187,7 @@ void TestTreeBalanceAndRemoval()
     }
 
     std::mt19937 random(2026);
-    for (int i = 0; i < 3000; ++i)
+    for (std::size_t i = 0; i < 3000; ++i)
     {
         int value = static_cast<int>(random() % 500);
         if (random() % 2 == 0)
@@ -205,17 +255,17 @@ void TestTreeAlgorithms()
     BinarySearchTree<int> tree(values, 3);
     Tree<int>& interface = tree;
     std::unique_ptr<Tree<int>> mapped = interface.Map(Negate);
-    assert((mapped->GetItems() == std::vector<int>{-3, -2, -1}));
+    CheckItems(*mapped->GetItems(), {-3, -2, -1});
     assert(mapped->IsValid());
     std::unique_ptr<Tree<int>> collapsed = interface.Map(Zero);
     assert(collapsed->GetCount() == 1 && collapsed->Contains(0));
     std::unique_ptr<Tree<int>> even = interface.Where(Even);
-    assert((even->GetItems() == std::vector<int>{2}));
+    CheckItems(*even->GetItems(), {2});
     assert(interface.Where(Always)->GetCount() == 3);
     assert(interface.Where(Never)->GetCount() == 0);
     assert(interface.Reduce(Sum, 0) == 6);
     assert(interface.Reduce(LabReduce, 4) == 144);
-    assert((tree.GetItems() == std::vector<int>{1, 2, 3}));
+    CheckItems(*tree.GetItems(), {1, 2, 3});
 
     BinarySearchTree<int> empty;
     assert(empty.Map(Negate)->GetCount() == 0);
@@ -240,12 +290,18 @@ void TestTreeSubtrees()
     int values[] = {8, 4, 12, 2, 6, 10, 14};
     BinarySearchTree<int> tree(values, 7);
     std::unique_ptr<Tree<int>> subtree = tree.GetSubtree(4);
-    assert((subtree->GetItems() == std::vector<int>{2, 4, 6}));
+    CheckItems(*subtree->GetItems(), {2, 4, 6});
     assert(tree.ContainsSubtree(*subtree));
+    TreeProxy proxy(*subtree);
+    assert(tree.ContainsSubtree(proxy));
+    TreeProxy wholeTree(tree);
+    assert(tree.ContainsSubtree(wholeTree));
+    assert(wholeTree.ContainsSubtree(proxy));
     assert(tree.ContainsSubtree(*tree.GetSubtree(8)));
     subtree->Insert(5);
     assert(!tree.Contains(5));
     assert(!tree.ContainsSubtree(*subtree));
+    assert(!tree.ContainsSubtree(proxy));
 
     BinarySearchTree<int> shape;
     shape.ReadFromString("(\"2\" # (\"4\" # #))", ValueFromString<int>);
@@ -254,6 +310,17 @@ void TestTreeSubtrees()
     assert(tree.ContainsSubtree(empty));
     assert(empty.ContainsSubtree(empty));
     assert(!empty.ContainsSubtree(tree));
+    TreeProxy emptyProxy(empty);
+    assert(tree.ContainsSubtree(emptyProxy));
+    assert(emptyProxy.ContainsSubtree(empty));
+
+    BinarySearchTree<int> firstShape;
+    BinarySearchTree<int> secondShape;
+    firstShape.ReadFromString("(\"2\" (\"1\" # #) (\"3\" # (\"4\" # #)))", ValueFromString<int>);
+    secondShape.ReadFromString("(\"2\" (\"1\" # #) (\"4\" (\"3\" # #) #))", ValueFromString<int>);
+    CheckSameItems(*firstShape.GetItems(), *secondShape.GetItems());
+    TreeProxy differentShape(secondShape);
+    assert(!firstShape.ContainsSubtree(differentShape));
 
     bool thrown = false;
     try { tree.GetSubtree(999); }
@@ -300,9 +367,9 @@ void TestTreeSerialization()
         CheckInvalidString(tree, text);
     }
     std::string deep;
-    for (int i = 0; i < 70; ++i) { deep += "(\"1\" "; }
+    for (std::size_t i = 0; i < 140; ++i) { deep += "(\"1\" "; }
     deep += '#';
-    for (int i = 0; i < 70; ++i) { deep += " #)"; }
+    for (std::size_t i = 0; i < 140; ++i) { deep += " #)"; }
     CheckInvalidString(tree, deep);
 
     bool thrown = false;
@@ -327,6 +394,7 @@ class Record
 {
 public:
     int value;
+    Record() : value(0) { }
     explicit Record(int value) : value(value) { }
 };
 
@@ -336,24 +404,33 @@ static Record ReadRecord(const std::string& text) { return Record(ValueFromStrin
 
 void TestTreeTypes()
 {
+    assert(SizeFromString("0") == 0);
+    assert(SizeFromString("  +42  ") == 42);
+    std::size_t maximumSize = std::numeric_limits<std::size_t>::max();
+    assert(SizeFromString(std::to_string(maximumSize)) == maximumSize);
+    std::string invalidSizes[] = {"-1", "  -2", "1x", "", std::to_string(maximumSize) + "0"};
+    for (const std::string& text : invalidSizes)
+    {
+        bool thrown = false;
+        try { SizeFromString(text); }
+        catch (const std::invalid_argument&) { thrown = true; }
+        assert(thrown);
+    }
+
     BinarySearchTree<double> numbers;
     numbers.Insert(0.1);
     numbers.Insert(-1.2345678901234567);
     BinarySearchTree<double> restoredNumbers;
-    restoredNumbers.ReadFromString(numbers.ToString(ValueToString<double>), ValueFromString<double>);
-    assert(restoredNumbers.GetItems() == numbers.GetItems());
-    bool thrown = false;
-    try { numbers.Insert(std::numeric_limits<double>::quiet_NaN()); }
-    catch (const std::invalid_argument&) { thrown = true; }
-    assert(thrown && numbers.GetCount() == 2);
+    restoredNumbers.ReadFromString(numbers.ToString(ValueToString<double>), DoubleFromString);
+    CheckSameItems(*restoredNumbers.GetItems(), *numbers.GetItems());
 
     BinarySearchTree<std::string> words;
     words.Insert(" a word ");
     words.Insert("# (quote \" and slash \\)\nnext line");
     words.Insert("");
     BinarySearchTree<std::string> restoredWords;
-    restoredWords.ReadFromString(words.ToString(ValueToString<std::string>), ValueFromString<std::string>);
-    assert(restoredWords.GetItems() == words.GetItems());
+    restoredWords.ReadFromString(words.ToString(StringToString), StringFromString);
+    CheckSameItems(*restoredWords.GetItems(), *words.GetItems());
 
     BinarySearchTree<Record> records(CompareRecords);
     records.Insert(Record(2));
@@ -362,7 +439,17 @@ void TestTreeTypes()
     restoredRecords.ReadFromString(records.ToString(WriteRecord), ReadRecord);
     assert(restoredRecords.GetRoot().value == records.GetRoot().value);
     assert(restoredRecords.Contains(Record(1)));
+    assert(records.ContainsSubtree(*restoredRecords.Clone()));
     assert(restoredRecords.IsValid());
+    std::unique_ptr<Sequence<Record>> recordItems = restoredRecords.GetItems();
+    assert(recordItems->GetLength() == 2 && recordItems->Get(0).value == 1 && recordItems->Get(1).value == 2);
+
+    Student emptyStudent;
+    assert(emptyStudent.GetID() == 0 && emptyStudent.GetFirstName().empty());
+    assert(emptyStudent.GetMiddleName().empty() && emptyStudent.GetLastName().empty());
+    assert(emptyStudent.GetBirthDate().empty());
+    Student restoredEmpty = StudentFromString(StudentToString(emptyStudent));
+    assert(StudentToString(restoredEmpty) == StudentToString(emptyStudent));
 
     Student student(10, "Ivan \"A\"", "Ivanovich", "Petrov", "2004-02-29");
     BinarySearchTree<Student> students(CompareStudents);
@@ -372,7 +459,7 @@ void TestTreeTypes()
     BinarySearchTree<Student> restoredStudents(CompareStudents);
     restoredStudents.ReadFromString(students.ToString(StudentToString), StudentFromString);
     assert(StudentToString(restoredStudents.GetRoot()) == StudentToString(student));
-    thrown = false;
+    bool thrown = false;
     try { Student invalid(1, "Ivan", "", "Petrov", "2003-02-29"); }
     catch (const std::invalid_argument&) { thrown = true; }
     assert(thrown);
@@ -383,7 +470,7 @@ void TestTreeTypes()
 
     int values[] = {1, 3, 2};
     BinarySearchTree<int> reversed(values, 3, Descending);
-    assert((reversed.GetItems() == std::vector<int>{3, 2, 1}));
+    CheckItems(*reversed.GetItems(), {3, 2, 1});
     assert(reversed.IsValid());
     assert(reversed.Map(Negate)->GetCompare() == Descending);
 }
@@ -395,6 +482,7 @@ public:
     static int copiesLeft;
     int value;
 
+    Tracked() : value(0) { ++alive; }
     explicit Tracked(int value) : value(value) { ++alive; }
     Tracked(const Tracked& other) : value(other.value)
     {
@@ -402,7 +490,13 @@ public:
         if (copiesLeft > 0) { --copiesLeft; }
         ++alive;
     }
-    Tracked& operator=(const Tracked& other) { this->value = other.value; return *this; }
+    Tracked& operator=(const Tracked& other)
+    {
+        if (copiesLeft == 0) { throw std::runtime_error("test assignment failure"); }
+        if (copiesLeft > 0) { --copiesLeft; }
+        this->value = other.value;
+        return *this;
+    }
     ~Tracked() { --alive; }
 };
 
@@ -420,7 +514,7 @@ void TestTreeLifetimeAndExceptions()
     assert(Tracked::alive == 0);
     {
         std::unique_ptr<Tree<Tracked>> tree = std::make_unique<BinarySearchTree<Tracked>>(CompareTracked);
-        for (int i = 1; i <= 7; ++i) { tree->Insert(Tracked(i)); }
+        for (int value = 1; value <= 7; ++value) { tree->Insert(Tracked(value)); }
         assert(Tracked::alive == 7);
         bool thrown = false;
         try { tree->Map(ThrowingMap); }
@@ -433,6 +527,13 @@ void TestTreeLifetimeAndExceptions()
         catch (const std::runtime_error&) { thrown = true; }
         Tracked::copiesLeft = -1;
         assert(thrown && Tracked::alive == 7 && tree->IsValid());
+
+        Tracked::copiesLeft = 2;
+        thrown = false;
+        try { tree->GetItems(); }
+        catch (const std::runtime_error&) { thrown = true; }
+        Tracked::copiesLeft = -1;
+        assert(thrown && Tracked::alive == 7 && tree->GetCount() == 7);
 
         Tracked::copiesLeft = 0;
         thrown = false;

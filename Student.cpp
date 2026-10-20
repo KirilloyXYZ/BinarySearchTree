@@ -1,6 +1,6 @@
 #include "Student.hpp"
 
-#include <cctype>
+#include <cstddef>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
@@ -11,9 +11,9 @@ static bool IsDate(const std::string& date)
     {
         return false;
     }
-    for (int i = 0; i < 10; ++i)
+    for (std::size_t i = 0; i < 10; ++i)
     {
-        if (i != 4 && i != 7 && !std::isdigit(static_cast<unsigned char>(date[i])))
+        if (i != 4 && i != 7 && (date[i] < '0' || date[i] > '9'))
         {
             return false;
         }
@@ -34,6 +34,8 @@ static bool IsDate(const std::string& date)
     }
     return day >= 1 && day <= days[month - 1];
 }
+
+Student::Student() : id(0) { }
 
 Student::Student(int id, const std::string& firstName, const std::string& middleName,
                  const std::string& lastName, const std::string& birthDate)
@@ -89,6 +91,10 @@ Student StudentFromString(const std::string& text)
     if (!input.eof())
     {
         throw std::invalid_argument("StudentFromString: trailing data");
+    }
+    if (id == 0 && firstName.empty() && middleName.empty() && lastName.empty() && birthDate.empty())
+    {
+        return Student();
     }
     return Student(id, firstName, middleName, lastName, birthDate);
 }

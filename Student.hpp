@@ -13,6 +13,7 @@ private:
     std::string birthDate;
 
 public:
+    Student();
     Student(int id, const std::string& firstName, const std::string& middleName,
             const std::string& lastName, const std::string& birthDate);
 

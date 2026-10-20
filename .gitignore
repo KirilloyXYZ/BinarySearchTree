@@ -2,5 +2,7 @@
 lab1_app
 tests
 tests_sanitized
+benchmark
+results/
 *.dSYM/
 .DS_Store
