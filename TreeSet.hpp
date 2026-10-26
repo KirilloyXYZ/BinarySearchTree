@@ -28,6 +28,7 @@ public:
     bool (*GetCompare() const)(const T&, const T&) override;
     std::unique_ptr<Sequence<T>> GetItems() const override;
     std::unique_ptr<Sequence<T>> GetItems(std::size_t limit) const override;
+    std::unique_ptr<IEnumerator<T>> GetEnumerator(TraversalOrder order = TraversalOrder::LKP) const override;
 
     std::unique_ptr<Set<T>> Clone() const override;
     std::unique_ptr<Set<T>> Map(T (*func)(const T&)) const override;
@@ -120,6 +121,12 @@ std::unique_ptr<Sequence<T>> TreeSet<T>::GetItems(std::size_t limit) const
 }
 
 template<typename T>
+std::unique_ptr<IEnumerator<T>> TreeSet<T>::GetEnumerator(TraversalOrder order) const
+{
+    return this->tree->GetEnumerator(order);
+}
+
+template<typename T>
 std::unique_ptr<Set<T>> TreeSet<T>::Clone() const
 {
     return std::unique_ptr<Set<T>>(new TreeSet<T>(this->tree->Clone()));
@@ -157,10 +164,10 @@ std::unique_ptr<Set<T>> TreeSet<T>::Union(const Set<T>& other) const
 {
     this->CheckCompare(other);
     std::unique_ptr<Set<T>> result = this->Clone();
-    std::unique_ptr<Sequence<T>> items = other.GetItems();
-    for (std::size_t i = 0; i < items->GetLength(); ++i)
+    std::unique_ptr<IEnumerator<T>> enumerator = other.GetEnumerator();
+    while (enumerator->MoveNext())
     {
-        result->Insert(items->Get(i));
+        result->Insert(enumerator->GetCurrent());
     }
     return result;
 }
@@ -170,10 +177,10 @@ std::unique_ptr<Set<T>> TreeSet<T>::Intersection(const Set<T>& other) const
 {
     this->CheckCompare(other);
     std::unique_ptr<Set<T>> result = std::make_unique<TreeSet<T>>(this->GetCompare());
-    std::unique_ptr<Sequence<T>> items = this->GetItems();
-    for (std::size_t i = 0; i < items->GetLength(); ++i)
+    std::unique_ptr<IEnumerator<T>> enumerator = this->GetEnumerator();
+    while (enumerator->MoveNext())
     {
-        const T& value = items->Get(i);
+        const T& value = enumerator->GetCurrent();
         if (other.Contains(value))
         {
             result->Insert(value);
@@ -187,10 +194,10 @@ std::unique_ptr<Set<T>> TreeSet<T>::Difference(const Set<T>& other) const
 {
     this->CheckCompare(other);
     std::unique_ptr<Set<T>> result = std::make_unique<TreeSet<T>>(this->GetCompare());
-    std::unique_ptr<Sequence<T>> items = this->GetItems();
-    for (std::size_t i = 0; i < items->GetLength(); ++i)
+    std::unique_ptr<IEnumerator<T>> enumerator = this->GetEnumerator();
+    while (enumerator->MoveNext())
     {
-        const T& value = items->Get(i);
+        const T& value = enumerator->GetCurrent();
         if (!other.Contains(value))
         {
             result->Insert(value);
@@ -208,10 +215,10 @@ bool TreeSet<T>::IsSubsetOf(const Set<T>& other) const
         return false;
     }
 
-    std::unique_ptr<Sequence<T>> items = this->GetItems();
-    for (std::size_t i = 0; i < items->GetLength(); ++i)
+    std::unique_ptr<IEnumerator<T>> enumerator = this->GetEnumerator();
+    while (enumerator->MoveNext())
     {
-        if (!other.Contains(items->Get(i)))
+        if (!other.Contains(enumerator->GetCurrent()))
         {
             return false;
         }

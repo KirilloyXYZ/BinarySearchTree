@@ -3,6 +3,7 @@
 #include "TreeTests.hpp"
 #include "SetTests.hpp"
 #include "SequenceTests.hpp"
+#include "EnumerationTests.hpp"
 
 int main()
 {
@@ -20,10 +21,8 @@ int main()
     std::cout << "PASS: Map, Where, Reduce\n";
     TestTreeSubtrees();
     std::cout << "PASS: subtrees\n";
-    TestTreeSerialization();
-    std::cout << "PASS: serialization and invalid input\n";
     TestTreeTypes();
-    std::cout << "PASS: generic types and students\n";
+    std::cout << "PASS: generic types and input validation\n";
     TestTreeLifetimeAndExceptions();
     std::cout << "PASS: lifetime and exception cleanup\n";
     TestSetBasics();
@@ -34,6 +33,14 @@ int main()
     std::cout << "PASS: set algorithms and types\n";
     TestSetErrors();
     std::cout << "PASS: set error handling\n";
-    std::cout << "All 14 test groups passed!\n";
+    TestTraversalOrders();
+    std::cout << "PASS: all six traversal orders and Traverse\n";
+    TestEnumeratorStates();
+    std::cout << "PASS: empty, singleton and independent enumerators\n";
+    TestEnumeratorInvalidation();
+    std::cout << "PASS: enumerator invalidation and owner lifetime\n";
+    TestSetEnumeration();
+    std::cout << "PASS: set enumeration and custom types\n";
+    std::cout << "All 17 test groups passed!\n";
     return 0;
 }

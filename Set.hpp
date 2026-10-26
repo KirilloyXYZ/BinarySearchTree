@@ -4,10 +4,11 @@
 #include <cstddef>
 #include <memory>
 
+#include "IEnumerable.hpp"
 #include "Sequence.hpp"
 
 template<typename T>
-class Set
+class Set : public IEnumerable<T>
 {
 public:
     virtual ~Set() = default;

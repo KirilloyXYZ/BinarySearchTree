@@ -4,21 +4,21 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdlib>
-#include <iomanip>
 #include <memory>
-#include <sstream>
 #include <stdexcept>
-#include <string>
 #include <utility>
 
 #include "Tree.hpp"
 #include "ArraySequence.hpp"
-#include "ValueFunctions.hpp"
+#include "CompareValues.hpp"
+#include "TreeEnumerator.hpp"
 
 template<typename T>
 class BinarySearchTree : public Tree<T>
 {
 private:
+    friend class TreeEnumerator<T>;
+
     class Node
     {
     public:
@@ -33,6 +33,8 @@ private:
     std::unique_ptr<Node> root;
     std::size_t count;
     bool (*compare)(const T&, const T&);
+    // Only this counter is shared; it never owns any nodes.
+    std::shared_ptr<std::size_t> version = std::make_shared<std::size_t>(0);
 
     const Node* FindNode(const T& value) const;
     std::unique_ptr<Node> CloneNode(const Node* node) const;
@@ -44,9 +46,6 @@ private:
     void MapNode(const Node* node, Tree<T>& result, T (*func)(const T&)) const;
     void WhereNode(const Node* node, Tree<T>& result, bool (*predicate)(const T&)) const;
     void ReduceNode(const Node* node, T& result, T (*func)(const T&, const T&)) const;
-    void WriteNode(const Node* node, std::ostream& output, std::string (*write)(const T&)) const;
-    std::unique_ptr<Node> ReadNode(std::istream& input, T (*read)(const std::string&), std::size_t depth, std::size_t& size) const;
-    void PrintNode(const Node* node, std::ostream& output, std::string (*write)(const T&), std::size_t depth, std::size_t maxDepth) const;
 
     int NodeHeight(const Node* node) const;
     void UpdateHeight(Node* node);
@@ -78,6 +77,8 @@ public:
     std::unique_ptr<Sequence<T>> GetItems() const override;
     std::unique_ptr<Sequence<T>> GetItems(std::size_t limit) const override;
     std::unique_ptr<Sequence<const T*>> GetStructure() const override;
+    // Successful Insert/Remove, Clear and assignment from another tree invalidate enumerators.
+    std::unique_ptr<IEnumerator<T>> GetEnumerator(TraversalOrder order = TraversalOrder::LKP) const override;
 
     std::unique_ptr<Tree<T>> Clone() const override;
     std::unique_ptr<Tree<T>> Map(T (*func)(const T&)) const override;
@@ -85,10 +86,6 @@ public:
     T Reduce(T (*func)(const T&, const T&), const T& startValue) const override;
     std::unique_ptr<Tree<T>> GetSubtree(const T& value) const override;
     bool ContainsSubtree(const Tree<T>& other) const override;
-
-    std::string ToString(std::string (*write)(const T&)) const override;
-    void ReadFromString(const std::string& text, T (*read)(const std::string&)) override;
-    void Print(std::ostream& output, std::string (*write)(const T&), std::size_t maxDepth = 5) const override;
 };
 
 template<typename T>
@@ -130,6 +127,7 @@ BinarySearchTree<T>& BinarySearchTree<T>::operator=(const BinarySearchTree<T>& o
         this->root = std::move(newRoot);
         this->count = other.count;
         this->compare = other.compare;
+        ++*this->version;
     }
 
     return *this;
@@ -243,6 +241,7 @@ bool BinarySearchTree<T>::Insert(const T& value)
     if (inserted)
     {
         ++this->count;
+        ++*this->version;
     }
     return inserted;
 }
@@ -314,6 +313,7 @@ bool BinarySearchTree<T>::Remove(const T& value)
     if (removed)
     {
         --this->count;
+        ++*this->version;
     }
     return removed;
 }
@@ -358,6 +358,7 @@ void BinarySearchTree<T>::Clear()
 {
     this->root.reset();
     this->count = 0;
+    ++*this->version;
 }
 
 template<typename T>
@@ -658,134 +659,9 @@ bool BinarySearchTree<T>::IsValid() const
 }
 
 template<typename T>
-void BinarySearchTree<T>::WriteNode(const Node* node, std::ostream& output, std::string (*write)(const T&)) const
+std::unique_ptr<IEnumerator<T>> BinarySearchTree<T>::GetEnumerator(TraversalOrder order) const
 {
-    if (node == nullptr)
-    {
-        output << '#';
-        return;
-    }
-
-    output << '(' << std::quoted(write(node->data)) << ' ';
-    this->WriteNode(node->left.get(), output, write);
-    output << ' ';
-    this->WriteNode(node->right.get(), output, write);
-    output << ')';
-}
-
-template<typename T>
-std::string BinarySearchTree<T>::ToString(std::string (*write)(const T&)) const
-{
-    if (write == nullptr)
-    {
-        throw std::invalid_argument("BinarySearchTree::ToString: null writer");
-    }
-
-    std::ostringstream output;
-    this->WriteNode(this->root.get(), output, write);
-    return output.str();
-}
-
-template<typename T>
-std::unique_ptr<typename BinarySearchTree<T>::Node> BinarySearchTree<T>::ReadNode(std::istream& input, T (*read)(const std::string&), std::size_t depth, std::size_t& size) const
-{
-    input >> std::ws;
-    if (input.peek() == '#')
-    {
-        input.get();
-        return nullptr;
-    }
-    // Limit recursion when parsing malformed input.
-    if (depth >= 128 || input.get() != '(')
-    {
-        throw std::invalid_argument("BinarySearchTree::ReadFromString: invalid node or excessive depth");
-    }
-
-    input >> std::ws;
-    std::string value;
-    if (input.peek() != '"' || !(input >> std::quoted(value)))
-    {
-        throw std::invalid_argument("BinarySearchTree::ReadFromString: expected a quoted value");
-    }
-    if (size + 1 == 0)
-    {
-        throw std::length_error("BinarySearchTree::ReadFromString: too many nodes");
-    }
-
-    std::unique_ptr<Node> node = std::make_unique<Node>(read(value));
-    if (this->compare(node->data, node->data))
-    {
-        throw std::invalid_argument("BinarySearchTree::ReadFromString: invalid comparison rule");
-    }
-    ++size;
-    node->left = this->ReadNode(input, read, depth + 1, size);
-    node->right = this->ReadNode(input, read, depth + 1, size);
-    input >> std::ws;
-    if (input.get() != ')')
-    {
-        throw std::invalid_argument("BinarySearchTree::ReadFromString: expected closing parenthesis");
-    }
-
-    int leftHeight = node->left == nullptr ? 0 : node->left->height;
-    int rightHeight = node->right == nullptr ? 0 : node->right->height;
-    node->height = 1 + std::max(leftHeight, rightHeight);
-    return node;
-}
-
-template<typename T>
-void BinarySearchTree<T>::ReadFromString(const std::string& text, T (*read)(const std::string&))
-{
-    if (read == nullptr)
-    {
-        throw std::invalid_argument("BinarySearchTree::ReadFromString: null reader");
-    }
-
-    std::istringstream input(text);
-    std::size_t size = 0;
-    std::unique_ptr<Node> newRoot = this->ReadNode(input, read, 0, size);
-    input >> std::ws;
-    std::size_t checkedSize = 0;
-    if (!input.eof() || this->ValidateNode(newRoot.get(), nullptr, nullptr, checkedSize) < 0 || checkedSize != size)
-    {
-        throw std::invalid_argument("BinarySearchTree::ReadFromString: invalid AVL tree or trailing data");
-    }
-
-    this->root = std::move(newRoot);
-    this->count = size;
-}
-
-template<typename T>
-void BinarySearchTree<T>::PrintNode(const Node* node, std::ostream& output, std::string (*write)(const T&), std::size_t depth, std::size_t maxDepth) const
-{
-    if (node == nullptr)
-    {
-        return;
-    }
-    if (depth == maxDepth)
-    {
-        output << std::string(depth * 4, ' ') << "...\n";
-        return;
-    }
-
-    this->PrintNode(node->right.get(), output, write, depth + 1, maxDepth);
-    output << std::string(depth * 4, ' ') << write(node->data) << '\n';
-    this->PrintNode(node->left.get(), output, write, depth + 1, maxDepth);
-}
-
-template<typename T>
-void BinarySearchTree<T>::Print(std::ostream& output, std::string (*write)(const T&), std::size_t maxDepth) const
-{
-    if (write == nullptr || maxDepth < 1 || maxDepth > 10)
-    {
-        throw std::invalid_argument("BinarySearchTree::Print: null writer or depth outside 1..10");
-    }
-    if (this->root == nullptr)
-    {
-        output << "<empty>\n";
-        return;
-    }
-
-    this->PrintNode(this->root.get(), output, write, 0, maxDepth);
+    return std::unique_ptr<IEnumerator<T>>(new TreeEnumerator<T>(this->root.get(), order, this->version));
 }
 
 #endif

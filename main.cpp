@@ -1,13 +1,17 @@
+#include <cmath>
 #include <cstddef>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <numeric>
 #include <random>
+#include <stdexcept>
 #include <string>
+#include <utility>
 
 #include "BinarySearchTree.hpp"
 #include "TreeSet.hpp"
-#include "Student.hpp"
+#include "ValueFunctions.hpp"
 
 struct EndOfInput { };
 
@@ -53,9 +57,7 @@ template<typename T>
 struct DemoFunctions
 {
     bool (*compare)(const T&, const T&);
-    std::string (*write)(const T&);
     T (*read)(const std::string&);
-    T (*readKey)(const std::string&);
     T (*map)(const T&);
     bool (*where)(const T&);
     T (*reduce)(const T&, const T&);
@@ -64,18 +66,57 @@ struct DemoFunctions
     std::string description;
 };
 
-template<typename T, typename Container>
-void PrintItems(const std::string& name, const Container& container, const DemoFunctions<T>& functions)
+template<typename T>
+void PrintEnumeration(const IEnumerable<T>& container, TraversalOrder order)
 {
-    std::unique_ptr<Sequence<T>> items = container.GetItems(25);
-    std::cout << name << " (элементов: " << container.GetCount() << "): [";
-    for (std::size_t i = 0; i < items->GetLength(); ++i)
+    std::unique_ptr<IEnumerator<T>> enumerator = container.GetEnumerator(order);
+    std::size_t shown = 0;
+    while (shown < 25 && enumerator->MoveNext())
     {
-        if (i > 0) { std::cout << "; "; }
-        std::cout << std::quoted(functions.write(items->Get(i)));
+        if (shown > 0) { std::cout << "; "; }
+        std::cout << enumerator->GetCurrent();
+        ++shown;
     }
-    if (container.GetCount() > items->GetLength()) { std::cout << "; ..."; }
+    if (shown == 25 && enumerator->MoveNext()) { std::cout << "; ..."; }
+}
+
+template<typename T>
+void PrintItems(const std::string& name, const IEnumerable<T>& container, std::size_t count)
+{
+    std::cout << name << " (элементов: " << count << "): [";
+    PrintEnumeration(container, TraversalOrder::LKP);
     std::cout << "]\n";
+}
+
+template<typename T>
+void PrintTraversals(const IEnumerable<T>& container)
+{
+    TraversalOrder orders[] = {TraversalOrder::KLP, TraversalOrder::KPL, TraversalOrder::LKP,
+        TraversalOrder::LPK, TraversalOrder::PLK, TraversalOrder::PKL};
+    const char* names[] = {"КЛП", "КПЛ", "ЛКП", "ЛПК", "ПЛК", "ПКЛ"};
+    for (std::size_t i = 0; i < 6; ++i)
+    {
+        std::cout << names[i] << ": ";
+        std::size_t shown = 0;
+        container.Traverse(orders[i], [&shown](const T& value)
+        {
+            if (shown < 25) { std::cout << value << ' '; }
+            ++shown;
+        });
+        if (shown > 25) { std::cout << "..."; }
+        std::cout << '\n';
+    }
+}
+
+static TraversalOrder ReadTraversalOrder()
+{
+    std::cout << "1. КЛП   2. КПЛ   3. ЛКП   4. ЛПК   5. ПЛК   6. ПКЛ\n";
+    int order = ReadInt("Порядок обхода: ");
+    if (order < 1 || order > 6)
+    {
+        throw std::invalid_argument("Порядок обхода должен быть от 1 до 6");
+    }
+    return static_cast<TraversalOrder>(order - 1);
 }
 
 template<typename T, typename Container>
@@ -94,7 +135,7 @@ template<typename T, typename Container>
 void FillGenerated(Container& container, const DemoFunctions<T>& functions)
 {
     std::size_t count = ReadSize("Количество уникальных элементов: ");
-    int minimum = ReadInt("Минимальный ключ (для студентов ID должен быть положительным): ");
+    int minimum = ReadInt("Минимальный ключ: ");
     int maximum = ReadInt("Максимальный ключ: ");
     int seed = ReadInt("Начальное значение генератора, например 2026: ");
     long long range = static_cast<long long>(maximum) - minimum + 1;
@@ -127,13 +168,13 @@ void FillGenerated(Container& container, const DemoFunctions<T>& functions)
 static void PrintTreeMenu()
 {
     std::cout << "\nДЕРЕВО\n"
-              << "1. Создать вручную   2. Сгенерировать   3. Показать дерево и результат\n"
+              << "1. Создать вручную   2. Сгенерировать   3. Показать элементы и результат\n"
               << "4. Добавить          5. Найти           6. Удалить\n"
               << "7. Map               8. Where          9. Reduce\n"
               << "10. Извлечь поддерево в результат       11. Проверить вхождение результата\n"
-              << "12. Сохранить дерево в строку          13. Прочитать дерево из строки\n"
-              << "14. Прочитать кандидат-поддерево в результат\n"
-              << "15. Скопировать дерево в результат     16. Очистить дерево\n"
+              << "12. Скопировать дерево в результат     13. Очистить дерево\n"
+              << "14. Шесть обходов через Traverse       15. Обход через TreeEnumerator\n"
+              << "16. Ввести дерево-кандидат в результат\n"
               << "0. Назад\n";
 }
 
@@ -159,16 +200,15 @@ void RunTreeMenu(const DemoFunctions<T>& functions)
                     if (command == 1) { FillManually(*created, functions); }
                     else { FillGenerated(*created, functions); }
                     tree = std::move(created);
-                    PrintItems("Дерево", *tree, functions);
+                    PrintItems("Дерево", *tree, tree->GetCount());
                     break;
                 }
                 case 3:
-                    PrintItems("Дерево", *tree, functions);
+                    PrintItems("Дерево", *tree, tree->GetCount());
                     std::cout << "Высота: " << tree->GetHeight() << "; порядок и баланс: "
                               << (tree->IsValid() ? "верны" : "нарушены") << '\n';
-                    std::cout << "Вид сбоку: правая ветка выше, левая ниже корня.\n";
-                    tree->Print(std::cout, functions.write);
-                    PrintItems("Последний результат / кандидат", *result, functions);
+                    if (tree->GetCount() > 0) { std::cout << "Корень: " << tree->GetRoot() << '\n'; }
+                    PrintItems("Последний результат / кандидат", *result, result->GetCount());
                     break;
                 case 4:
                 {
@@ -179,54 +219,58 @@ void RunTreeMenu(const DemoFunctions<T>& functions)
                 case 5:
                 case 6:
                 {
-                    T value = ReadValue<T>("Искомое значение (для студента только ID): ", functions.readKey);
+                    T value = ReadValue<T>("Искомое значение: ", functions.read);
                     if (command == 5) { std::cout << (tree->Contains(value) ? "Найден.\n" : "Не найден.\n"); }
                     else { std::cout << (tree->Remove(value) ? "Удалён.\n" : "Не найден.\n"); }
                     break;
                 }
                 case 7:
                     result = tree->Map(functions.map);
-                    PrintItems("Результат Map", *result, functions);
+                    PrintItems("Результат Map", *result, result->GetCount());
                     break;
                 case 8:
                     result = tree->Where(functions.where);
-                    PrintItems("Результат Where", *result, functions);
+                    PrintItems("Результат Where", *result, result->GetCount());
                     break;
                 case 9:
                 {
                     T reduced = tree->Reduce(functions.reduce, functions.startValue);
-                    std::cout << "Reduce: " << functions.write(reduced) << '\n';
+                    std::cout << "Reduce: " << reduced << '\n';
                     break;
                 }
                 case 10:
                 {
-                    T value = ReadValue<T>("Корень поддерева (для студента только ID): ", functions.readKey);
+                    T value = ReadValue<T>("Корень поддерева: ", functions.read);
                     result = tree->GetSubtree(value);
-                    PrintItems("Поддерево", *result, functions);
+                    PrintItems("Поддерево", *result, result->GetCount());
                     break;
                 }
                 case 11:
                     std::cout << (tree->ContainsSubtree(*result) ? "Поддерево входит.\n" : "Поддерево не входит.\n");
                     break;
                 case 12:
-                    std::cout << tree->ToString(functions.write) << '\n';
+                    result = tree->Clone();
+                    PrintItems("Копия", *result, result->GetCount());
                     break;
                 case 13:
-                    tree->ReadFromString(ReadLine("Строка дерева: "), functions.read);
-                    PrintItems("Восстановленное дерево", *tree, functions);
-                    break;
-                case 14:
-                    result->ReadFromString(ReadLine("Строка кандидата: "), functions.read);
-                    PrintItems("Кандидат", *result, functions);
-                    break;
-                case 15:
-                    result = tree->Clone();
-                    PrintItems("Копия", *result, functions);
-                    break;
-                case 16:
                     tree->Clear();
                     std::cout << "Дерево очищено.\n";
                     break;
+                case 14:
+                    PrintTraversals(*tree);
+                    break;
+                case 15:
+                    PrintEnumeration(*tree, ReadTraversalOrder());
+                    std::cout << '\n';
+                    break;
+                case 16:
+                {
+                    std::unique_ptr<Tree<T>> created = std::make_unique<BinarySearchTree<T>>(functions.compare);
+                    FillManually(*created, functions);
+                    result = std::move(created);
+                    PrintItems("Кандидат", *result, result->GetCount());
+                    break;
+                }
                 default:
                     std::cout << "Неизвестная команда.\n";
             }
@@ -247,7 +291,8 @@ static void PrintSetMenu()
               << "9. Map(A)   10. Where(A)   11. Reduce(A)\n"
               << "12. Объединение   13. Пересечение   14. Разность A - B\n"
               << "15. A включено в B?   16. A равно B?   17. Скопировать A\n"
-              << "18. Очистить A   19. Очистить B   0. Назад\n";
+              << "18. Очистить A   19. Очистить B\n"
+              << "20. Шесть обходов A через Traverse   21. Обход A через TreeEnumerator   0. Назад\n";
 }
 
 template<typename T>
@@ -276,14 +321,14 @@ void RunSetMenu(const DemoFunctions<T>& functions)
                     else { FillGenerated(*created, functions); }
                     if (command == 1 || command == 3) { a = std::move(created); }
                     else { b = std::move(created); }
-                    PrintItems("A", *a, functions);
-                    PrintItems("B", *b, functions);
+                    PrintItems("A", *a, a->GetCount());
+                    PrintItems("B", *b, b->GetCount());
                     break;
                 }
                 case 5:
-                    PrintItems("A", *a, functions);
-                    PrintItems("B", *b, functions);
-                    PrintItems("Последний результат", *result, functions);
+                    PrintItems("A", *a, a->GetCount());
+                    PrintItems("B", *b, b->GetCount());
+                    PrintItems("Последний результат", *result, result->GetCount());
                     break;
                 case 6:
                 {
@@ -294,7 +339,7 @@ void RunSetMenu(const DemoFunctions<T>& functions)
                 case 7:
                 case 8:
                 {
-                    T value = ReadValue<T>("Искомое значение (для студента только ID): ", functions.readKey);
+                    T value = ReadValue<T>("Искомое значение: ", functions.read);
                     bool success = command == 7 ? a->Remove(value) : a->Contains(value);
                     std::cout << (success ? "Выполнено: элемент найден.\n" : "Элемент не найден.\n");
                     break;
@@ -304,7 +349,7 @@ void RunSetMenu(const DemoFunctions<T>& functions)
                 case 11:
                 {
                     T reduced = a->Reduce(functions.reduce, functions.startValue);
-                    std::cout << "Reduce: " << functions.write(reduced) << '\n';
+                    std::cout << "Reduce: " << reduced << '\n';
                     break;
                 }
                 case 12: result = a->Union(*b); break;
@@ -315,11 +360,16 @@ void RunSetMenu(const DemoFunctions<T>& functions)
                 case 17: result = a->Clone(); break;
                 case 18: a->Clear(); break;
                 case 19: b->Clear(); break;
+                case 20: PrintTraversals(*a); break;
+                case 21:
+                    PrintEnumeration(*a, ReadTraversalOrder());
+                    std::cout << '\n';
+                    break;
                 default: std::cout << "Неизвестная команда.\n";
             }
             if (command == 9 || command == 10 || (command >= 12 && command <= 14) || command == 17)
             {
-                PrintItems("Результат", *result, functions);
+                PrintItems("Результат", *result, result->GetCount());
             }
         }
         catch (const std::exception& error)
@@ -368,18 +418,6 @@ static std::string StringReduce(const std::string& value, const std::string& res
     return result.empty() ? value : result + " | " + value;
 }
 static std::string StringFromKey(int key) { return "word_" + std::to_string(key); }
-static Student StudentFromKey(int key) { return Student(key, "Ivan", "", "Student", "2005-01-01"); }
-static Student ReadStudentKey(const std::string& text) { return StudentFromKey(ValueFromString<int>(text)); }
-static Student StudentMap(const Student& value)
-{
-    return Student(value.GetID(), value.GetFirstName(), value.GetMiddleName(), value.GetLastName() + "+", value.GetBirthDate());
-}
-static bool StudentWhere(const Student& value) { return value.GetID() % 2 == 0; }
-static Student StudentReduce(const Student& value, const Student& result)
-{
-    return value.GetID() <= result.GetID() ? value : result;
-}
-
 int main()
 {
     std::cout << "ЛР-1: бинарное дерево поиска и множество\n";
@@ -387,38 +425,25 @@ int main()
     {
         while (true)
         {
-            std::cout << "\nТип элементов: 1. int   2. double   3. string   4. Student   0. Выход\n";
+            std::cout << "\nТип элементов: 1. int   2. double   3. string   0. Выход\n";
             int type = ReadInt("Тип: ");
             if (type == 0) { break; }
             if (type == 1)
             {
-                DemoFunctions<int> functions = {CompareValues<int>, ValueToString<int>, ValueFromString<int>,
-                    ValueFromString<int>, IntMap, IntWhere, IntReduce, 0, IntFromKey,
+                DemoFunctions<int> functions = {CompareValues<int>, ValueFromString<int>, IntMap, IntWhere, IntReduce, 0, IntFromKey,
                     "Map: изменить знак; Where: чётные; Reduce: сумма, старт 0."};
                 RunDemo(functions);
             }
             else if (type == 2)
             {
-                DemoFunctions<double> functions = {CompareValues<double>, ValueToString<double>, DoubleFromString,
-                    DoubleFromString, DoubleMap, DoubleWhere, DoubleReduce, 0.0, DoubleFromKey,
+                DemoFunctions<double> functions = {CompareValues<double>, DoubleFromString, DoubleMap, DoubleWhere, DoubleReduce, 0.0, DoubleFromKey,
                     "Map: изменить знак; Where: положительные; Reduce: сумма, старт 0."};
                 RunDemo(functions);
             }
             else if (type == 3)
             {
-                DemoFunctions<std::string> functions = {CompareValues<std::string>, StringToString,
-                    StringFromString, StringFromString, StringMap, StringWhere, StringReduce,
+                DemoFunctions<std::string> functions = {CompareValues<std::string>, StringFromString, StringMap, StringWhere, StringReduce,
                     "", StringFromKey, "Строки вводятся целой строкой. Map: добавить !; Where: непустые; Reduce: соединить."};
-                RunDemo(functions);
-            }
-            else if (type == 4)
-            {
-                DemoFunctions<Student> functions = {CompareStudents, StudentToString, StudentFromString,
-                    ReadStudentKey, StudentMap, StudentWhere, StudentReduce,
-                    Student(std::numeric_limits<int>::max(), "Empty", "", "Result", "2000-01-01"), StudentFromKey,
-                    "Ввод: ID \"Имя\" \"Отчество\" \"Фамилия\" \"YYYY-MM-DD\".\n"
-                    "Пример: 12 \"Иван\" \"\" \"Петров\" \"2005-01-01\". Ключ — ID.\n"
-                    "Map: добавить + к фамилии; Where: чётные ID; Reduce: минимальный ID (пустой результат — максимальный ID типа int)."};
                 RunDemo(functions);
             }
             else { std::cout << "Неизвестный тип.\n"; }

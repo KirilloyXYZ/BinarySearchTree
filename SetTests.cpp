@@ -4,7 +4,6 @@
 #include <cassert>
 
 #include "TreeSet.hpp"
-#include "Student.hpp"
 
 static int Negate(const int& value) { return -value; }
 static int Zero(const int&) { return 0; }
@@ -99,13 +98,7 @@ void TestSetAlgorithmsAndTypes()
     numbers.Insert(-0.5);
     assert(numbers.Contains(1.25));
 
-    TreeSet<Student> students(CompareStudents);
-    students.Insert(Student(2, "Ivan", "", "Petrov", "2004-01-01"));
-    students.Insert(Student(2, "Petr", "", "Ivanov", "2005-01-01"));
-    assert(students.GetCount() == 1);
-    assert(students.GetItems()->Get(0).GetFirstName() == "Ivan");
-    std::unique_ptr<Set<Student>> clone = students.Clone();
-    assert(clone->Equals(students));
+
 }
 
 void TestSetErrors()

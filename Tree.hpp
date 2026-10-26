@@ -2,14 +2,13 @@
 #define TREE_HPP
 
 #include <cstddef>
-#include <iosfwd>
 #include <memory>
-#include <string>
 
+#include "IEnumerable.hpp"
 #include "Sequence.hpp"
 
 template<typename T>
-class Tree
+class Tree : public IEnumerable<T>
 {
 public:
     virtual ~Tree() = default;
@@ -35,10 +34,6 @@ public:
     virtual T Reduce(T (*func)(const T&, const T&), const T& startValue) const = 0;
     virtual std::unique_ptr<Tree<T>> GetSubtree(const T& value) const = 0;
     virtual bool ContainsSubtree(const Tree<T>& other) const = 0;
-
-    virtual std::string ToString(std::string (*write)(const T&)) const = 0;
-    virtual void ReadFromString(const std::string& text, T (*read)(const std::string&)) = 0;
-    virtual void Print(std::ostream& output, std::string (*write)(const T&), std::size_t maxDepth = 5) const = 0;
 };
 
 #endif

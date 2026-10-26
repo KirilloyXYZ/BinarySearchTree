@@ -10,6 +10,8 @@
 
 #include "BinarySearchTree.hpp"
 #include "TreeSet.hpp"
+#include "DynamicArray.hpp"
+#include "ValueFunctions.hpp"
 
 using Clock = std::chrono::steady_clock;
 
@@ -70,18 +72,47 @@ static void MeasureDetailed(std::ostream& output, BinarySearchTree<int>& tree,
     Record(output, count, order, "contains_subtree", 1, repeat, time, contained);
     result.reset();
 
-    start = Clock::now();
-    std::string text = tree.ToString(ValueToString<int>);
-    time = Elapsed(start);
-    Record(output, count, order, "serialize", 1, repeat, time, text.size());
-    BinarySearchTree<int> restored;
-    start = Clock::now();
-    restored.ReadFromString(text, ValueFromString<int>);
-    time = Elapsed(start);
-    Record(output, count, order, "deserialize", 1, repeat, time, restored.GetCount());
-    if (!contained || restored.GetCount() != count || !restored.IsValid())
+    if (!contained || !tree.IsValid())
     {
         throw std::runtime_error("benchmark: invalid detailed result");
+    }
+
+    TraversalOrder orders[] = {TraversalOrder::KLP, TraversalOrder::KPL, TraversalOrder::LKP,
+        TraversalOrder::LPK, TraversalOrder::PLK, TraversalOrder::PKL};
+    const char* names[] = {"enumerate_KLP", "enumerate_KPL", "enumerate_LKP",
+        "enumerate_LPK", "enumerate_PLK", "enumerate_PKL"};
+    for (std::size_t i = 0; i < 6; ++i)
+    {
+        start = Clock::now();
+        std::unique_ptr<IEnumerator<int>> enumerator = tree.GetEnumerator(orders[i]);
+        std::size_t visited = 0;
+        int enumeratedChecksum = 0;
+        while (enumerator->MoveNext())
+        {
+            enumeratedChecksum ^= enumerator->GetCurrent();
+            ++visited;
+        }
+        time = Elapsed(start);
+        Record(output, count, order, names[i], count, repeat, time, enumeratedChecksum);
+        if (visited != count || enumeratedChecksum != checksum)
+        {
+            throw std::runtime_error("benchmark: invalid enumeration result");
+        }
+    }
+
+    start = Clock::now();
+    std::size_t visited = 0;
+    int traversedChecksum = 0;
+    tree.Traverse(TraversalOrder::LKP, [&visited, &traversedChecksum](const int& value)
+    {
+        ++visited;
+        traversedChecksum ^= value;
+    });
+    time = Elapsed(start);
+    Record(output, count, order, "traverse", count, repeat, time, traversedChecksum);
+    if (visited != count || traversedChecksum != checksum)
+    {
+        throw std::runtime_error("benchmark: invalid Traverse result");
     }
 }
 
