@@ -281,7 +281,7 @@ bool BinarySearchTree<T>::RemoveNode(std::unique_ptr<Node>& node, const T& value
     }
     else
     {
-        // Keep the old owner alive while moving its child pointers.
+        
         std::unique_ptr<Node> oldRoot = std::move(node);
         if (oldRoot->left == nullptr)
         {
