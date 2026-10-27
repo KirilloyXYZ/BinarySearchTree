@@ -4,12 +4,11 @@
 #include <algorithm>
 #include <cstddef>
 #include <memory>
-#include <ostream>
 #include <stdexcept>
-#include <string>
 #include <utility>
 
 #include "Tree.hpp"
+#include "ArraySequence.hpp"
 
 template<typename T>
 bool CompareValues(const T& left, const T& right)
@@ -37,7 +36,10 @@ private:
     bool (*compare)(const T&, const T&);
 
     const Node* FindNode(const T& value) const;
-    void PrintNode(const Node* node, std::ostream& output, std::string (*write)(const T&), std::size_t depth, std::size_t maxDepth) const;
+    void CollectItems(const Node* node, Sequence<T>& items, std::size_t limit) const;
+    void MapNode(const Node* node, Tree<T>& result, T (*func)(const T&)) const;
+    void WhereNode(const Node* node, Tree<T>& result, bool (*predicate)(const T&)) const;
+    void ReduceNode(const Node* node, T& result, T (*func)(const T&, const T&)) const;
 
     int NodeHeight(const Node* node) const;
     void UpdateHeight(Node* node);
@@ -61,8 +63,12 @@ public:
     int GetHeight() const override;
     const T& GetRoot() const override;
     void Clear() override;
+    std::unique_ptr<Sequence<T>> GetItems() const override;
+    std::unique_ptr<Sequence<T>> GetItems(std::size_t limit) const override;
 
-    void Print(std::ostream& output, std::string (*write)(const T&), std::size_t maxDepth = 5) const override;
+    std::unique_ptr<Tree<T>> Map(T (*func)(const T&)) const override;
+    std::unique_ptr<Tree<T>> Where(bool (*predicate)(const T&)) const override;
+    T Reduce(T (*func)(const T&, const T&), const T& startValue) const override;
 };
 
 template<typename T>
@@ -317,37 +323,114 @@ const typename BinarySearchTree<T>::Node* BinarySearchTree<T>::FindNode(const T&
 }
 
 template<typename T>
-void BinarySearchTree<T>::PrintNode(const Node* node, std::ostream& output, std::string (*write)(const T&), std::size_t depth, std::size_t maxDepth) const
+void BinarySearchTree<T>::CollectItems(const Node* node, Sequence<T>& items, std::size_t limit) const
+{
+    if (node == nullptr || items.GetLength() >= limit)
+    {
+        return;
+    }
+
+    this->CollectItems(node->left.get(), items, limit);
+    if (items.GetLength() < limit)
+    {
+        items.Append(node->data);
+        this->CollectItems(node->right.get(), items, limit);
+    }
+}
+
+template<typename T>
+std::unique_ptr<Sequence<T>> BinarySearchTree<T>::GetItems() const
+{
+    return this->GetItems(this->count);
+}
+
+template<typename T>
+std::unique_ptr<Sequence<T>> BinarySearchTree<T>::GetItems(std::size_t limit) const
+{
+    std::unique_ptr<Sequence<T>> result = std::make_unique<ArraySequence<T>>(std::min(this->count, limit));
+    this->CollectItems(this->root.get(), *result, limit);
+    return result;
+}
+
+template<typename T>
+void BinarySearchTree<T>::MapNode(const Node* node, Tree<T>& result, T (*func)(const T&)) const
 {
     if (node == nullptr)
     {
         return;
     }
-    if (depth == maxDepth)
-    {
-        output << std::string(depth * 4, ' ') << "...\n";
-        return;
-    }
 
-    this->PrintNode(node->right.get(), output, write, depth + 1, maxDepth);
-    output << std::string(depth * 4, ' ') << write(node->data) << '\n';
-    this->PrintNode(node->left.get(), output, write, depth + 1, maxDepth);
+    this->MapNode(node->left.get(), result, func);
+    result.Insert(func(node->data));
+    this->MapNode(node->right.get(), result, func);
 }
 
 template<typename T>
-void BinarySearchTree<T>::Print(std::ostream& output, std::string (*write)(const T&), std::size_t maxDepth) const
+std::unique_ptr<Tree<T>> BinarySearchTree<T>::Map(T (*func)(const T&)) const
 {
-    if (write == nullptr || maxDepth < 1 || maxDepth > 10)
+    if (func == nullptr)
     {
-        throw std::invalid_argument("BinarySearchTree::Print: null writer or depth outside 1..10");
+        throw std::invalid_argument("BinarySearchTree::Map: null function");
     }
-    if (this->root == nullptr)
+
+    std::unique_ptr<Tree<T>> result = std::make_unique<BinarySearchTree<T>>(this->compare);
+    this->MapNode(this->root.get(), *result, func);
+    return result;
+}
+
+template<typename T>
+void BinarySearchTree<T>::WhereNode(const Node* node, Tree<T>& result, bool (*predicate)(const T&)) const
+{
+    if (node == nullptr)
     {
-        output << "<empty>\n";
         return;
     }
 
-    this->PrintNode(this->root.get(), output, write, 0, maxDepth);
+    this->WhereNode(node->left.get(), result, predicate);
+    if (predicate(node->data))
+    {
+        result.Insert(node->data);
+    }
+    this->WhereNode(node->right.get(), result, predicate);
+}
+
+template<typename T>
+std::unique_ptr<Tree<T>> BinarySearchTree<T>::Where(bool (*predicate)(const T&)) const
+{
+    if (predicate == nullptr)
+    {
+        throw std::invalid_argument("BinarySearchTree::Where: null predicate");
+    }
+
+    std::unique_ptr<Tree<T>> result = std::make_unique<BinarySearchTree<T>>(this->compare);
+    this->WhereNode(this->root.get(), *result, predicate);
+    return result;
+}
+
+template<typename T>
+void BinarySearchTree<T>::ReduceNode(const Node* node, T& result, T (*func)(const T&, const T&)) const
+{
+    if (node == nullptr)
+    {
+        return;
+    }
+
+    this->ReduceNode(node->left.get(), result, func);
+    result = func(node->data, result);
+    this->ReduceNode(node->right.get(), result, func);
+}
+
+template<typename T>
+T BinarySearchTree<T>::Reduce(T (*func)(const T&, const T&), const T& startValue) const
+{
+    if (func == nullptr)
+    {
+        throw std::invalid_argument("BinarySearchTree::Reduce: null function");
+    }
+
+    T result = startValue;
+    this->ReduceNode(this->root.get(), result, func);
+    return result;
 }
 
 #endif
