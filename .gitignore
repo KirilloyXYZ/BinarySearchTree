@@ -1,4 +1,5 @@
 *.o
 lab1_app
+lab1_tests
 *.dSYM/
 .DS_Store
