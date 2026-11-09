@@ -14,7 +14,6 @@ public:
     virtual ~IEnumerable() = default;
 
     virtual std::unique_ptr<IEnumerator<T, K>> GetEnumerator(TraversalOrder order = TraversalOrder::LKP) const = 0;
-    // The action must not change this container.
     void Traverse(TraversalOrder order, void (*action)(const K&, const T&)) const;
 };
 
@@ -23,7 +22,7 @@ void IEnumerable<T, K>::Traverse(TraversalOrder order, void (*action)(const K&, 
 {
     if (action == nullptr)
     {
-        throw std::invalid_argument("IEnumerable::Traverse: null action");
+        throw std::invalid_argument("IEnumerable::Traverse: null action"); // не нужно
     }
 
     std::unique_ptr<IEnumerator<T, K>> enumerator = this->GetEnumerator(order);

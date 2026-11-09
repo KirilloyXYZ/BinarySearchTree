@@ -1,5 +1,9 @@
 *.o
 lab1_app
 lab1_tests
+lab1_tests_sanitized
+lab1_bench
+.venv/
+__pycache__/
 *.dSYM/
 .DS_Store

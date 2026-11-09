@@ -2,6 +2,7 @@
 #define TREE_HPP
 
 #include <cstddef>
+#include <iosfwd>
 #include <memory>
 
 #include "IEnumerable.hpp"
@@ -22,6 +23,8 @@ public:
     virtual const T& GetRoot() const = 0;
     virtual const K& GetRootKey() const = 0;
     virtual void Clear() = 0;
+    virtual void Print(std::ostream& stream, void (*write)(std::ostream&, const K&, const T&),
+                       std::size_t maxDepth = 8, std::size_t maxNodes = 100) const = 0;
 
     virtual std::unique_ptr<Tree<T, K>> Map(T (*func)(const T&)) const = 0;
     virtual std::unique_ptr<Tree<T, K>> Where(bool (*predicate)(const T&)) const = 0;

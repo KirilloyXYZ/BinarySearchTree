@@ -8,7 +8,7 @@ public:
     virtual ~IEnumerator() = default;
     virtual bool MoveNext() = 0;
     virtual const T& GetCurrent() const = 0;
-    virtual const K& GetCurrentKey() const = 0;
+    virtual const K& GetCurrentKey() const = 0; // заменить на интерфейс итераторов миожно по желанию
 };
 
 #endif
